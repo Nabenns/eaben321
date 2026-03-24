@@ -1,0 +1,949 @@
+# ============================================================
+# Formula Trading Strategy
+# Update bertahap per modul
+# Last update: Modul 14 (CISD & MSS) — FORMULA COMPLETE
+# ============================================================
+
+name: "Liquidity-Based Strategy"
+version: "1.4-complete"
+description: "2-Stages: Stage1 HTF (SSMT/Fill/MirrorPD/NWOG) → Stage2 LTF → CSD → Entry | SL Stage2 swing | TP HTF Liquidity"
+
+# --- Liquidity Levels & Timeframe Marking ---
+liquidity_levels:
+  PWH_PWL:
+    description: "Previous Week High / Previous Week Low"
+    marking_timeframe: "H4"
+  PDH_PDL:
+    description: "Previous Day High / Previous Day Low"
+    marking_timeframe: "H1"
+  session_high_low:
+    description: "High/Low dari sesi sebelumnya (selalu sesi sebelumnya)"
+    marking_timeframe: "M15"
+    rules:
+      - "Jika aktif di sesi London → mark High/Low sesi Asia"
+      - "Jika aktif di sesi NY AM → mark High/Low sesi London"
+  EQH_EQL:
+    description: "Equal Highs / Equal Lows (multiple touches di level sama)"
+    marking_timeframe: "sesuai konteks"
+  BSL_SSL:
+    description: "Buyside Liquidity / Sellside Liquidity"
+    marking_timeframe: "sesuai konteks"
+
+# --- Trigger ---
+trigger:
+  name: "Sweep Liquidity"
+  description: "Harga mengambil/menyentuh salah satu liquidity level di atas"
+  valid_targets:
+    - "BSL / SSL"
+    - "EQH / EQL"
+    - "PWH / PWL"
+    - "PDH / PDL"
+    - "Session High / Session Low"
+
+# --- Bias setelah Sweep ---
+bias_logic:
+  after_sweep_high: "SELL — target likuiditas bawah terdekat yang masih fresh"
+  after_sweep_low: "BUY — target likuiditas atas terdekat yang masih fresh"
+
+# --- TP Logic ---
+tp_logic:
+  method: "Liquidity to Liquidity"
+  description: >
+    Setelah sweep liquidity atas → TP di liquidity bawah terdekat yang fresh.
+    Setelah sweep liquidity bawah → TP di liquidity atas terdekat yang fresh.
+  fvg_context: >
+    TP dari setup FVG: Low/High terakhir yang terbentuk sebelum harga retrace ke FVG.
+  equilibrium_context: >
+    TP dari setup Equilibrium: Swing Low/High dari impulse leg yang diukur dengan Fibonacci.
+    Sell setup → TP di Swing Low. Buy setup → TP di Swing High.
+  two_target_system:
+    tp1: "Internal Liquidity terdekat (EQH/EQL, PDH/PDL, Session H/L)"
+    tp2: "External Liquidity (BSL/SSL yang lebih jauh, PWH/PWL)"
+    note: "TP1 bisa digunakan untuk partial close, biarkan sisa posisi ke TP2"
+  fresh_criteria: "Level belum pernah tersentuh setelah terbentuk"
+
+# --- Entry Model (2-Stages Verification) ---
+entry_model:
+  type: "2-Stages Verification — wajib 2 reasons sebelum entry"
+  rule: "TIDAK BOLEH entry hanya berdasarkan 1 setup saja"
+
+  focused_timeframes: [H4, H1, M15, M5, M1]
+  step_down_rule:
+    max: 2
+    description: "Turun maksimal 2 step dalam hierarki H4→H1→M15→M5→M1"
+    hierarchy:
+      H4: 1
+      H1: 2
+      M15: 3
+      M5: 4
+      M1: 5
+    example_valid: "Stage 1 H1 (rank 2) → Stage 2 M15 (rank 3) atau M5 (rank 4) ✓"
+    example_invalid: "Stage 1 H1 (rank 2) → Stage 2 M1 (rank 5) = turun 3 step ✗"
+
+  valid_combinations:
+    SSMT_plus_SSMT:
+      stage_1: "SSMT di TF manapun (H4/H1/M15/M5/M1)"
+      stage_2: "SSMT turun maksimal 2 step"
+      example: "SSMT H1 → SSMT M15 atau M5"
+      invalid: "SSMT H1 → SSMT M1 (turun 3 step)"
+
+    SSMT_plus_SMT_Fill:
+      stage_1: "SSMT di TF manapun"
+      stage_2: "SMT Fill turun maksimal 2 step"
+      example: "SSMT M15 → SMT Fill M5 atau M1"
+      note: "M1 valid karena dari M15 turun 2 step"
+
+    SSMT_plus_PSP:
+      stage_1: "SSMT di TF manapun"
+      stage_2: "PSP di TF yang sama ATAU turun maksimal 2 step"
+      example: "SSMT M15 → PSP M15, M5, atau M1"
+      note: "PSP di TF yang sama juga valid"
+
+    SMT_Fill_plus_SSMT:
+      stage_1: "SMT Fill di TF manapun"
+      stage_2: "SSMT turun maksimal 2 step"
+      example: "SMT Fill H1 → SSMT M15 atau M5"
+
+    SMT_Fill_plus_PSP:
+      stage_1: "SMT Fill di TF manapun"
+      stage_2: "PSP di TF yang sama atau turun maksimal 2 step"
+      example: "SMT Fill H1 → PSP H1, M15, atau M5"
+
+    Mirror_PD_plus_SSMT:
+      stage_1: "Mirror PD dari structure (fokus TF: H4/H1/M15/M5)"
+      stage_2: "SSMT bebas TF — H1/M15/M5/M1 semua valid"
+      use_case: "Continuation setup (market sudah buat swing H/L)"
+      note: "Mirror PD stage 1 lebih fleksibel untuk SSMT stage 2"
+
+    Mirror_PD_plus_SMT_Fill:
+      stage_1: "Mirror PD dari structure (H4/H1/M15/M5)"
+      stage_2: "SMT Fill — sinkronkan dengan TF Mirror PD"
+      example: "Mirror PD structure M15 → SMT Fill H1/M15/M5"
+      use_case: "Continuation setup"
+
+    Mirror_PD_plus_PSP:
+      stage_1: "Mirror PD dari structure (H4/H1/M15/M5)"
+      stage_2: "PSP — structure dan PSP harus sama-sama rapi"
+      use_case: "Continuation setup"
+      note: "Kualitas keduanya harus terjaga — structure rapi, PSP proporsi rapi"
+
+    NDOG_NWOG_plus_SSMT:
+      stage_1: "NDOG/NWOG sebagai area gap"
+      stage_2: "SSMT terbentuk tepat di area gap"
+      note: "Gap tervalidasi menjadi real S/R"
+
+  trigger: "CSD (Change in State of Delivery) di LTF (M1/M5) setelah Stage 1 dan Stage 2 tervalidasi"
+
+  entry_execution:
+    poi: "FVG di LTF dari pergerakan impulsif setelah Stage 2, atau area PSP/Mirror PD"
+    entry_type: "Limit order di area FVG/retrace setelah CSD"
+    sl: "Di bawah/atas swing terbaru Stage 2 LTF — BUKAN swing Stage 1 HTF"
+    sl_reason: "SL dari Stage 2 LTF = lebih ketat, Risk to Reward lebih optimal"
+    tp: "Liquidity HTF terdekat — BSL untuk Buy, SSL untuk Sell"
+
+  validation_checklist:
+    - "Stage 1 terbentuk di HTF (SSMT/SMT Fill/Mirror PD/NDOG/NWOG)"
+    - "Step down maksimal 2 cycle ke LTF"
+    - "Stage 2 terbentuk di LTF sebagai konfirmasi"
+    - "CSD terbentuk di LTF setelah Stage 2"
+    - "Entry di FVG/retrace setelah CSD"
+
+  invalidation:
+    - "Setelah Stage 1, harga langsung tembus swing HTF tanpa membentuk Stage 2"
+    - "Korelasi antar pair terputus sebelum konfirmasi LTF"
+    - "Step down melewati lebih dari 2 cycle"
+    - "Entry sebelum CSD di LTF terbentuk"
+
+  session_filter:
+    skip_always: ["Asia (Q1 Daily — observasi AMDX/XAMD)", "New York PM"]
+    logic: "Session entry ditentukan oleh sifat Asia Session (Q1 Daily Cycle)"
+
+    asia_observation:
+      role: "Q1 Daily Cycle — HANYA untuk identifikasi AMDX atau XAMD"
+      action: "Amati apakah Asia sideways (A) atau trending (X) — JANGAN trade"
+
+    if_asia_A:
+      pattern: "AMDX — London = fase M (Manipulasi)"
+      entry_session: "London Session"
+      entry_timing: "Q3 & Q4 dari 90m cycle di London"
+      logic: "Asia sideways → London bikin fake move (Manipulasi) → entry berlawanan arah"
+
+    if_asia_X:
+      pattern: "XAMD — London = fase A (Akumulasi/Sideways)"
+      skip: "SKIP London Session — choppy, tidak ada setup bagus"
+      entry_session: "New York AM Session"
+      entry_timing: "Q3 & Q4 dari 90m cycle di NY AM"
+      logic: "Asia trending → London sideways (skip) → NY AM bikin Manipulasi → entry"
+
+  macro_cycle_timing:
+    focus_quarters: ["Q3", "Q4"]
+    cycle: "90-Minute Cycle (Macro)"
+    reason: "Data high probability ada di Q3 & Q4 dari 90m cycle"
+    monitor_tf: "M5"
+    rule: >
+      Dalam satu sesi (London/NY AM), bagi sesi menjadi 4 kuartal 90 menit.
+      Setup entry HANYA dicari di Q3 dan Q4 90m cycle.
+      Q1 dan Q2 = observasi, identifikasi bias, jangan entry.
+
+  continuation_setup:
+    definition: >
+      Ketika harga sudah running di Q2 90m cycle karena ada 2-stage setup,
+      saat Q3 90m cycle masuk kita bisa cari entry baru untuk:
+      (a) Continuation — ikut arah yang sama dengan Q2
+      (b) Reversal — berlawanan arah jika 2 stages menunjukkan pembalikan
+    key_rule: "Kunci tetap sama — harus ada 2 stages yang valid di Q3 atau Q4 90m cycle"
+    example: >
+      Q2 90m: XAUUSD naik kencang (running) karena 2-stage setup buy.
+      Q3 90m masuk: cari 2 stages lagi.
+      Jika 2 stages bullish → Continuation buy.
+      Jika 2 stages bearish → Reversal sell.
+
+  warning: >
+    Godaan terbesar adalah langsung entry saat Stage 1 HTF terbentuk.
+    SABAR — tunggu Stage 2 di LTF + CSD sebelum eksekusi.
+    Low sering terbentuk di Asia Session, konfirmasi Stage 2 baru muncul di London/NY.
+
+entry_conditions:
+  long:
+    - "Stage 1: SSMT/SMT Fill/Mirror PD/NDOG di HTF menunjukkan bullish bias (sweep SSL)"
+    - "Step down ke LTF (max 2 cycle)"
+    - "Stage 2: konfirmasi bullish di LTF (SSMT/PSP/SMT Fill/FVG)"
+    - "CSD bullish terbentuk di LTF"
+    - "Entry limit di FVG/retrace setelah CSD"
+    - "SL di bawah latest low Stage 2 LTF"
+    - "TP di BSL / external liquidity HTF"
+  short:
+    - "Stage 1: SSMT/SMT Fill/Mirror PD/NDOG di HTF menunjukkan bearish bias (sweep BSL)"
+    - "Step down ke LTF (max 2 cycle)"
+    - "Stage 2: konfirmasi bearish di LTF (SSMT/PSP/SMT Fill/FVG)"
+    - "CSD bearish terbentuk di LTF"
+    - "Entry limit di FVG/retrace setelah CSD"
+    - "SL di atas latest high Stage 2 LTF"
+    - "TP di SSL / external liquidity HTF"
+
+# --- POI ---
+# Hierarki: FVG (utama) → Equilibrium (backup / konfirmasi tambahan)
+poi:
+  primary:
+    type: "Fair Value Gap (FVG)"
+    description: >
+      Area ruang kosong di tengah antara wick dari 3 candle berurutan.
+      Terbentuk saat harga bergerak sangat impulsif (kencang), meninggalkan
+      inefisiensi yang belum terisi.
+    identification:
+      method: "3-candle pattern"
+      bullish_fvg: "Low candle ke-3 lebih tinggi dari High candle ke-1 → gap di antara keduanya"
+      bearish_fvg: "High candle ke-3 lebih rendah dari Low candle ke-1 → gap di antara keduanya"
+    quality_criteria:
+      - "Ruang FVG harus rapi dan jelas (tidak terlalu lebar)"
+      - "Body candle tidak boleh ditembus wick candle besar di dalam area FVG"
+      - "FVG yang terbentuk setelah sweep lebih valid"
+      - "FVG fresh (belum pernah direbalance sebelumnya)"
+    invalid_fvg:
+      - "FVG terlalu lebar/besar"
+      - "Body candle tertembus wick candle besar dalam area FVG"
+      - "FVG sudah pernah direbalance (sudah diisi harga)"
+
+  secondary:
+    type: "Equilibrium (0.5 Fibonacci)"
+    description: >
+      Titik tengah (50%) dari impulse leg setelah sweep liquidity.
+      Digunakan sebagai POI alternatif ketika FVG ditembus/tidak direspect,
+      atau sebagai konfirmasi tambahan ketika FVG dan Equilibrium berimpit (confluent).
+    when_to_use:
+      - "Harga menembus FVG dan terus naik/turun ke 0.5 Fibo"
+      - "FVG dan level 0.5 Fibo berada di area yang sama (konfluens = lebih kuat)"
+    fibonacci_settings:
+      active_levels: [0, 0.5, 1]
+      note: "Matikan level lain agar chart tidak ramai"
+    how_to_draw:
+      sell_setup: "Tarik dari Swing High ke Swing Low dari impulse leg setelah sweep"
+      buy_setup: "Tarik dari Swing Low ke Swing High dari impulse leg setelah sweep"
+    impulse_reference: "Impulse leg yang diukur = pergerakan kuat SETELAH sweep liquidity terjadi"
+
+  confluent_signal: >
+    FVG + Equilibrium (0.5) berada di area yang sama = sinyal POI lebih kuat,
+    probabilitas reaksi harga lebih tinggi.
+
+# --- CISD & MSS (Entry Trigger Final) ---
+# Konfirmasi reversal di LTF setelah semua HTF setup terkonfirmasi
+cisd_mss:
+  prerequisite: "SMT (Divergence/SSMT/SMT Fill/Mirror PD) sudah terkonfirmasi di HTF"
+  used_on: "Lower Timeframe (LTF) — H1, M15, M5, M3, M1"
+
+  definitions:
+    MSS:
+      name: "Market Structure Shift"
+      reference: "Ditarik dari ujung WICK candle swing High/Low"
+      meaning: "Harga menyentuh/tembus level wick — struktur mulai bergeser"
+      validity: "Belum cukup — hanya sinyal awal"
+    CISD:
+      name: "Change in State of Delivery"
+      reference: "Ditarik dari batas BODY candle swing High/Low"
+      meaning: "Harga close body melewati level ini — reversal dikonfirmasi"
+      validity: "INI yang mengesahkan reversal — wajib body close melewati CISD"
+      analogy: "Mirip CHoCH (Change of Character) di SMC, tapi lebih presisi"
+
+  how_to_mark:
+    buy_setup:
+      swing_reference: "Swing Low terakhir sebelum pergerakan impulsif"
+      mss_level: "Tarik garis dari wick low candle swing"
+      cisd_level: "Tarik garis dari body low candle swing"
+      confirmation: "Candle close body DI BAWAH CISD = reversal bullish valid"
+    sell_setup:
+      swing_reference: "Swing High terakhir sebelum pergerakan impulsif"
+      mss_level: "Tarik garis dari wick high candle swing"
+      cisd_level: "Tarik garis dari body high candle swing"
+      confirmation: "Candle close body DI ATAS CISD = reversal bearish valid"
+
+  validation_checklist:
+    - "SMT sudah terkonfirmasi di HTF"
+    - "Swing High/Low terakhir sudah ditandai (wick = MSS, body = CISD)"
+    - "Candle break DAN close body melewati level CISD"
+
+  invalidation:
+    - "Harga hanya menembus dengan WICK tanpa body close melewati CISD → belum valid"
+    - "SMT belum terkonfirmasi sebelumnya"
+
+  after_cisd_confirmed:
+    action: "Tunggu retracement/rebalance — JANGAN entry langsung saat CISD break"
+    poi: "FVG unmitigated yang terbentuk dalam pergerakan breakout CISD"
+    entry: "Limit order di area FVG saat harga retrace"
+    sl_buy: "Di bawah Swing Low ekstrem acuan CISD"
+    sl_sell: "Di atas Swing High ekstrem acuan CISD"
+    tp: "BSL/SSL terdekat ATAU level -2/-4 dari DFR"
+
+  warning: >
+    Jangan langsung entry saat melihat SMT! Wajib tunggu CISD di LTF.
+    Wick tembus = belum valid. Body close = valid.
+
+# --- NDOG & NWOG (Opening Gap Levels) ---
+# Support/Resistance berbasis gap pembukaan — diperkuat dengan SMT
+ndog_nwog:
+  definitions:
+    NWOG:
+      name: "New Week Opening Gap"
+      description: "Gap antara close candle Jumat dan open candle Senin"
+      timing: "Awal minggu baru (Senin open)"
+      marks: "Area box antara Friday close dan Monday open"
+    NDOG:
+      name: "New Day Opening Gap"
+      description: "Gap antara close candle hari sebelumnya dan open candle hari berikutnya"
+      timing: "Awal hari baru setiap hari trading"
+      marks: "Area box antara previous day close dan current day open"
+
+  function:
+    default: "Support / Resistance naked — bisa menahan harga sendiri"
+    validated: "Menjadi REAL support/resistance yang kuat ketika SMT terbentuk di area gap"
+
+  smt_at_gap:
+    rule: >
+      SMT valid di area NDOG/NWOG ketika salah satu pair menyentuh/mengisi gap,
+      sedangkan pair korelasi lainnya tidak menyentuh gap tersebut.
+    confirmation: "End Candle pada TF yang relevan (M15/H1) wajib ditunggu"
+
+  validation_checklist:
+    - "Tandai area NDOG/NWOG di awal hari/minggu"
+    - "Tunggu harga kembali ke area gap"
+    - "Pantau 2+ pair korelasi saat harga menyentuh gap"
+    - "Terjadi SMT: Pair A menyentuh gap, Pair B tidak menyentuh"
+    - "Konfirmasi End Candle pada TF yang dianalisis"
+
+  invalidation:
+    - "Area gap ditembus body candle besar tanpa meninggalkan reaksi/wick"
+    - "Kedua pair sama-sama menembus gap tanpa divergence"
+
+  after_confirmed:
+    trigger: "SMT terkonfirmasi di area NDOG/NWOG + End Candle"
+    next: "Turun ke LTF (M1/M3) cari CISD atau MSS"
+    entry: "Di area FVG/retrace setelah CISD/MSS di LTF"
+    sl: "Di atas/bawah swing terakhir setelah konfirmasi"
+    tp: "Likuiditas terdekat atau struktur High/Low relevan"
+
+  indicator:
+    name: "Weekly Opening Gap (cryptonnite)"
+    nwog_settings: "Previous NWOGs = 5, aktifkan Extend to Current Day"
+    ndog_settings: "Previous NDOGs = 5, aktifkan Extend Previous NDOGs"
+    note: "Gunakan warna berbeda untuk NDOG (contoh: abu-abu) agar mudah dibedakan"
+
+  warning: >
+    NDOG/NWOG BUKAN sinyal entry langsung.
+    Tetap butuh konfirmasi SMT + perubahan struktur (MSS/CISD) di LTF.
+
+# --- SMT Divergence (Konfirmasi Wajib) ---
+# SLOGAN: "No SMT, No Entry"
+smt_divergence:
+  role: "Konfirmasi wajib — BUKAN sinyal entry langsung"
+  mandatory: true
+  slogan: "No SMT, No Entry"
+
+  correlation_types:
+    positive:
+      description: "Pasangan bergerak SEARAH — bandingkan di sisi yang sama (Low vs Low, High vs High)"
+      examples:
+        - "XAUUSD & XAUEUR & XAUGBP & XAGUSD"
+        - "BTCUSDT & ETHUSDT"
+        - "NAS100 & US500 & US30"
+      smt_signal:
+        at_low: "Pair A cetak Lower Low, Pair B cetak Higher Low (atau sebaliknya)"
+        at_high: "Pair A cetak Higher High, Pair B cetak Lower High (atau sebaliknya)"
+
+    negative:
+      description: "Pasangan bergerak BERLAWANAN — bandingkan di sisi berlawanan (Low vs High)"
+      examples:
+        - "EURUSD & DXY"
+      smt_signal:
+        eurusd_low: "EURUSD cetak Lower Low, DXY gagal cetak Higher High (malah Lower High)"
+        eurusd_high: "EURUSD cetak Higher High, DXY gagal cetak Lower Low (malah Higher Low)"
+
+  validation_checklist:
+    - "Pair yang dibandingkan memiliki korelasi yang tepat (Positif/Negatif)"
+    - "Salah satu pair menembus struktur (sweep High/Low)"
+    - "Pair korelasi pasangannya GAGAL menembus struktur (divergensi terbentuk)"
+    - "Waktu pembentukan High/Low kedua pair sinkron/bersamaan (cek crosshair)"
+    - "Muncul konfirmasi CISD/MSS di Lower Timeframe setelah SMT"
+
+  invalidation:
+    condition: "Semua pair yang berkorelasi menembus struktur secara bersamaan"
+    example: "XAUUSD sweep Low + XAUEUR sweep Low + XAUGBP sweep Low = TIDAK ADA SMT"
+
+  three_pair_rule: >
+    Jika membandingkan 3 instrumen, SMT valid jika MINIMAL SALAH SATU
+    instrumen gagal menembus struktur.
+
+  after_smt_confirmed:
+    action: "Turun ke Lower Timeframe (LTF) untuk mencari MSS atau CISD"
+    note: "MSS/CISD = entry trigger (detail Module 5)"
+
+  poi_after_smt: >
+    Setelah MSS/CISD impulsif terbentuk di LTF, tunggu retrace ke
+    Equilibrium, Inefficiency, atau FVG dari impulse MSS tersebut.
+
+# --- Sequential SMT (SSMT) ---
+# Versi SMT yang terikat ketat pada siklus kuartal
+ssmt:
+  description: >
+    SMT yang WAJIB mengacu pada High/Low dari kuartal tepat sebelumnya.
+    Lebih kaku dari SMT biasa — terikat pada urutan kuartal.
+
+  vs_regular_smt:
+    regular_smt: "Bisa referensi High/Low mana saja"
+    ssmt: "WAJIB referensi High/Low dari kuartal tepat sebelumnya (sequential)"
+
+  sequential_reference:
+    rule: "Hanya gunakan liquidity dari kuartal N-1 sebagai acuan"
+    valid:
+      - "Di Q2 → acuan High/Low dari Q1"
+      - "Di Q3 → acuan High/Low dari Q2"
+      - "Di Q4 → acuan High/Low dari Q3"
+      - "Di Q1 baru → acuan High/Low dari Q4 sebelumnya"
+    invalid: "Melompati kuartal (misal di Q3 tapi acuan dari Q1)"
+
+  divergence_types:
+    conventional:
+      description: "Pair A menembus liquidity, Pair B GAGAL menembus"
+      pair_a: "Higher High / Lower Low (break)"
+      pair_b: "Lower High / Higher Low (gagal)"
+    body_vs_wick:
+      description: "Keduanya menembus, tapi kekuatan berbeda"
+      stronger: "Pair A sweep dengan BODY (tembus penuh)"
+      weaker: "Pair B sweep dengan WICK saja (tidak full break)"
+    hidden_ssmt:
+      description: "Wick keduanya sama panjang, tapi Body-to-Body menunjukkan divergence"
+      rule: "Selalu cek Body-to-Body, jangan hanya lihat Wick"
+
+  validation_checklist:
+    - "Berada di kuartal lanjutan dan tandai High/Low dari kuartal tepat sebelumnya"
+    - "Pantau 2 pair korelasi positif secara bersamaan saat harga menyentuh acuan"
+    - "Terjadi SMT Konvensional ATAU Body vs Wick divergence"
+    - "Tunggu END CANDLE (candle close) pada TF kuartal — WAJIB sebelum konfirmasi"
+
+  end_candle_rule:
+    mandatory: true
+    timeframe_reference:
+      daily_cycle: "H1"
+      session_cycle_m15: "M15"
+    warning: "JANGAN entry sebelum candle close — jebakan paling umum"
+
+  invalidation:
+    - "Acuan liquidity melompati kuartal (bukan Q sebelumnya)"
+    - "Kedua pair sama-sama break dengan BODY"
+    - "Kedua pair sama-sama sweep dengan WICK"
+    - "Entry sebelum End Candle terbentuk"
+
+  after_ssmt_confirmed:
+    step_1: "Konfirmasi End Candle di TF kuartal"
+    step_2: "Validasi dengan True Open (lihat seksi true_open di bawah)"
+    step_3: "Turun ke LTF (M5/M3) untuk cari setup CSD/MSS"
+    step_4: "Tunggu FVG terbentuk setelah reaksi penolakan SSMT"
+    tp: "Internal range liquidity terdekat atau draw on liquidity kuartal berikutnya"
+
+# --- SMT Fill ---
+# SMT berbasis FVG — beda dari SSMT yang berbasis High/Low kuartal
+smt_fill:
+  definition: >
+    Konfirmasi SMT yang berfokus pada perbedaan respons dua pair korelasi positif
+    saat mengisi (fill/rebalance) FVG yang terbentuk pada waktu dan timeframe yang SAMA.
+  essence: "Presisi dari rebalance inefficiency"
+
+  vs_ssmt:
+    ssmt: "Berfokus pada High/Low dari kuartal sebelumnya"
+    smt_fill: "Berfokus pada FVG yang terbentuk bersamaan di kedua pair"
+
+  prerequisite:
+    - "MINIMAL 2 pair dari grup korelasi memiliki FVG pada JAM yang sama"
+    - "FVG pada 2 pair tersebut harus terbentuk pada TIMEFRAME yang sama"
+    - "Tidak harus semua pair dalam grup memiliki FVG"
+    - "Pair yang tidak memiliki FVG diabaikan — fokus pada 2 pair yang ada FVG-nya"
+  example:
+    group: "XAUUSD, XAUEUR, XAUGBP, XAGUSD"
+    valid_case: >
+      XAUUSD bikin FVG H1 jam 09:00 + XAUEUR bikin FVG H1 jam 09:00 →
+      XAUGBP & XAGUSD tidak ada FVG → TETAP VALID, gunakan XAUUSD & XAUEUR
+    minimum_pairs: 2
+
+  divergence_types:
+    type_1:
+      description: "Pair A menyentuh/fill FVG, Pair B tidak menyentuh FVG sama sekali"
+    type_2:
+      description: "Pair A fill FVG penuh (sampai batas bawah/atas), Pair B tidak fill"
+    type_3:
+      description: "Pair A fill FVG penuh, Pair B hanya fill sebagian"
+    common_rule: "Kunci utama: ada PERBEDAAN kedalaman fill antara kedua pair"
+
+  fill_depth_note:
+    wick_break_ok: "Pair menembus batas FVG menggunakan WICK → masih valid"
+    body_break_invalid: "Pair menembus batas FVG menggunakan BODY → setup GAGAL"
+
+  end_candle_rule:
+    mandatory: true
+    timeframe: "Sama dengan TF tempat FVG terbentuk (misal FVG di H4 → tunggu H4 close)"
+    warning: >
+      Seringkali harga terlihat menembus FVG saat candle masih berjalan,
+      namun saat close hanya meninggalkan wick → SMT Fill menjadi valid.
+      JANGAN entry sebelum candle close.
+
+  validation_checklist:
+    - "FVG terbentuk pada waktu (jam) dan TF yang sama di kedua pair"
+    - "Ada perbedaan respons saat fill: salah satu dari 3 tipe di atas"
+    - "Pair yang fill tidak break FVG dengan body (wick ok)"
+    - "Tunggu End Candle pada TF FVG terbentuk"
+
+  invalidation:
+    - "Kedua pair merespons FVG dengan cara/kedalaman yang SAMA PERSIS"
+    - "FVG terbentuk pada jam atau TF yang berbeda antara kedua pair"
+    - "Pair yang fill bablas break body menembus FVG"
+    - "Entry sebelum End Candle terkonfirmasi"
+    - "Ukuran/lebar FVG antara kedua pair SANGAT BERBEDA (satu kecil, satu besar) → invalid"
+  fvg_size_rule:
+    valid: "Ukuran ruang FVG kedua pair relatif SEBANDING / hampir sama besar"
+    invalid: "Salah satu FVG sangat kecil sedangkan FVG pair lain sangat besar → setup jelek, skip"
+    reason: "Perbedaan ukuran ekstrem menandakan impuls yang tidak sinkron — korelasi lemah"
+
+  after_confirmed:
+    trigger: "End Candle dikonfirmasi, SMT Fill valid"
+    next: "Turun ke LTF untuk setup entry turunan"
+    tp: "Likuiditas terdekat atau All Time High jika struktur mendukung"
+
+# --- Mirror Premium Discount (Mirror PD) ---
+# SMT berbasis Equilibrium (0.5 Fibo) — beda dari SMT Fill yang berbasis FVG
+mirror_pd:
+  definition: >
+    Perbedaan respons dua pair korelasi positif terhadap titik Equilibrium (0.5 Fibonacci)
+    dari structure (swing H/L) yang terbentuk pada waktu dan timeframe yang sama.
+  essence: >
+    Menjelaskan mengapa harga bisa running tanpa rebalance penuh di salah satu pair —
+    karena pair korelasi sudah rebalance duluan (mirror).
+
+  vs_smt_fill:
+    smt_fill: "Berfokus pada FVG (gap inefisiensi) yang terbentuk bersamaan"
+    mirror_pd: "Berfokus pada titik 0.5 Equilibrium dari structure yang terbentuk bersamaan"
+
+  prerequisite:
+    - "Structure (swing High & swing Low) terbentuk pada JAM dan TF yang SAMA di kedua pair"
+    - "Fibonacci ditarik pada structure yang benar-benar mirror (berbarengan)"
+    - "Fibonacci settings: hanya aktifkan 0, 0.5, dan 1"
+    - "Kedua pair harus berkorelasi positif (atau negatif dengan logika terbalik)"
+
+  how_to_draw:
+    sell_setup: "Tarik Fibo dari Swing High ke Swing Low pada structure mirror"
+    buy_setup: "Tarik Fibo dari Swing Low ke Swing High pada structure mirror"
+
+  divergence_signal:
+    valid: "Pair A menyentuh/rebalance ke 0.5, Pair B TIDAK menyentuh 0.5 → Mirror PD valid"
+    interpretation: >
+      Pair yang sudah rebalance ke 0.5 memberi 'izin' bagi pair yang belum menyentuh
+      untuk tetap melanjutkan trend tanpa harus rebalance penuh.
+
+  end_candle_rule:
+    mandatory: true
+    timeframe: "TF tempat structure dianalisis (misal structure H4 → tunggu H4 close)"
+
+  validation_checklist:
+    - "Structure swing H/L terbentuk di jam dan TF yang sama di kedua pair"
+    - "Tarik Fibo (0, 0.5, 1) pada structure mirror tersebut"
+    - "Pantau respons harga ke titik 0.5"
+    - "Pair A touch 0.5, Pair B tidak touch → Mirror PD"
+    - "Tunggu End Candle pada TF structure"
+
+  invalidation:
+    - "Kedua pair sama-sama menyentuh titik 0.5"
+    - "Kedua pair sama-sama tidak menyentuh titik 0.5"
+    - "Structure yang ditarik Fibonacci tidak sama (beda jam atau beda bentuk)"
+    - "Entry sebelum End Candle terbentuk"
+    - "Ukuran structure SANGAT BERBEDA antar pair → invalid"
+  structure_size_rule:
+    valid: "Panjang/tinggi swing H-L kedua pair SEBANDING / relatif sama"
+    invalid: "Pair A punya structure pendek/kecil, Pair B punya structure panjang/jauh → skip"
+    reason: >
+      Perbedaan ukuran structure yang ekstrem menandakan impulse tidak sinkron —
+      korelasi sedang lemah, Mirror PD tidak reliable.
+    analogy: "Prinsip sama dengan FVG size di SMT Fill — harus proporsional"
+
+  after_confirmed:
+    trigger: "End Candle dikonfirmasi, Mirror PD valid"
+    next: "Setup entry turunan di LTF"
+    tp: "Liquidity berikutnya searah trend (SSL untuk sell, BSL/ATH untuk buy)"
+
+# --- Precision Swing Point (PSP) ---
+# Layer konfirmasi final sebelum turun ke LTF untuk entry
+psp:
+  definition: >
+    Konfirmasi presisi swing point saat SMT terbentuk, dengan melihat perbedaan
+    arah/warna candle penutupan antara dua pair korelasi pada End Candle yang sama.
+  role: "Konfirmasi presisi swing point — bukan sinyal entry langsung"
+  prerequisite: "SMT (Divergence / SSMT / SMT Fill) sudah terkonfirmasi terlebih dahulu"
+
+  candle_direction_rule:
+    positive_correlation:
+      valid: "Pair A close BULLISH + Pair B close BEARISH (atau sebaliknya) pada End Candle yang sama"
+      invalid: "Keduanya close BULLISH atau keduanya close BEARISH"
+    negative_correlation:
+      valid: "Pair A dan Pair B close dengan arah SAMA (keduanya Bullish atau keduanya Bearish)"
+      invalid: "Keduanya close berlawanan arah"
+
+  anatomy_rule:
+    mandatory: true
+    description: >
+      Bukan hanya beda arah (Bullish/Bearish) — proporsi candle harus MIRROR.
+      Panjang wick atas, panjang wick bawah, dan ukuran body harus SEBANDING
+      antar semua pair korelasi yang dibandingkan.
+    valid: >
+      Pair A: body sedang, wick atas pendek, wick bawah panjang (Bullish)
+      Pair B: body sedang, wick atas pendek, wick bawah panjang (Bearish)
+      → Proporsi hampir sama, hanya arah body berlawanan = PSP valid
+    invalid:
+      - "Pair A punya full body besar, Pair B punya wick sangat panjang dengan body kecil"
+      - "Ukuran body salah satu pair jauh lebih besar/kecil dari pair lainnya"
+      - "Panjang wick antar pair sangat tidak sebanding"
+    key_principle: >
+      Candle PSP antar pair harus terlihat 'rapi dan seimbang' secara visual —
+      seperti cermin yang hanya dibalik arah body-nya saja.
+
+  end_candle_rule:
+    mandatory: true
+    note: "Cek arah candle HANYA setelah benar-benar close — jangan saat candle masih berjalan"
+
+  validation_checklist:
+    - "Ada indikasi SMT (Divergence/SSMT/SMT Fill) terbentuk"
+    - "Tunggu End Candle pada TF yang dianalisis"
+    - "Korelasi positif: Pair A Bullish + Pair B Bearish (atau sebaliknya)"
+    - "Korelasi negatif: kedua pair sama arah"
+    - "Anatomi candle proporsional (opsional tapi ideal)"
+
+  invalidation:
+    - "Korelasi positif: kedua pair sama-sama Bullish atau sama-sama Bearish"
+    - "Proporsi candle tidak mirror — body atau wick antar pair terlalu jauh berbeda"
+    - "Menyimpulkan PSP sebelum End Candle close"
+
+  confluence_requirement:
+    rule: "PSP paling valid ketika terbentuk BERSAMAAN dengan salah satu dari:"
+    valid_with:
+      - "SSMT (Sequential SMT)"
+      - "SMT Fill"
+      - "Mirror PD"
+    note: >
+      PSP yang muncul sekaligus dengan SSMT / SMT Fill / Mirror PD =
+      konfirmasi berlapis → setup lebih kuat dan reliable
+
+  entry_options:
+    direct_entry:
+      allowed: true
+      description: "Bisa langsung entry saat PSP terkonfirmasi (End Candle close)"
+      sl_buy: "SL di bawah latest Low WICK candle PSP"
+      sl_sell: "SL di atas latest High WICK candle PSP"
+      note: "Gunakan wick candle PSP sebagai referensi SL, bukan body"
+    ltf_entry:
+      description: "Turun ke LTF (M1/M3) untuk cari MSS/CISD, entry lebih presisi"
+      use_when: "Ingin tighter SL atau konfirmasi tambahan sebelum masuk"
+
+  stop_loss:
+    buy: "Di bawah latest Low WICK dari candle PSP"
+    sell: "Di atas latest High WICK dari candle PSP"
+    reference: "Wick — bukan body candle"
+
+  tp: "External Liquidity — BSL, SSL, atau All Time High jika struktur mendukung"
+
+# --- True Open ---
+# Wajib digunakan untuk memvalidasi SSMT — SSMT saja tidak cukup
+true_open:
+  definition: "Harga Open dari Kuartal 2 (Q2) pada siklus waktu tertentu"
+  role: "Filter validasi SSMT — memastikan SSMT terbentuk di zona yang benar"
+  mandatory: true
+  note: "SSMT saja tidak cukup — wajib divalidasi dengan True Open"
+
+  levels:
+    TYO:
+      name: "True Year Open"
+      definition: "Open Q2 Yearly"
+      timing: "Senin pertama bulan April"
+    TMO:
+      name: "True Month Open"
+      definition: "Open Q2 Monthly"
+      timing: "Senin kedua bulan tersebut"
+    TWO:
+      name: "True Week Open"
+      definition: "Open Q2 Weekly"
+      timing: "Hari Selasa"
+    TDO:
+      name: "True Day Open"
+      definition: "Open Q2 Daily"
+      timing: "Saat Sesi London dibuka"
+
+  validation_rule:
+    key_principle: "MINIMAL SALAH SATU pair korelasi harus memenuhi syarat zona True Open"
+    bullish_bias:
+      condition: >
+        Minimal 1 pair korelasi berada DI BAWAH True Open dan membentuk SSMT di bawah
+        (Higher Low / gagal break Low). Pair lainnya boleh di atas True Open.
+      example: >
+        XAUUSD di bawah TDO (bikin Higher Low) + XAUEUR di atas TDO → tetap VALID BUY
+    bearish_bias:
+      condition: >
+        Minimal 1 pair korelasi berada DI ATAS True Open dan membentuk SSMT di atas
+        (Higher High / break struktur atas). Pair lainnya boleh di bawah True Open.
+      example: >
+        XAUUSD di atas TDO (bikin Higher High) + XAUEUR/XAUGBP/XAGUSD di bawah TDO
+        (bikin Higher Low) → tetap VALID SELL
+
+  invalidation:
+    - "TIDAK ADA SATU PUN pair yang berada di zona yang benar relatif True Open"
+    - "SSMT Buy: semua pair di atas True Open → invalid"
+    - "SSMT Sell: semua pair di bawah True Open → invalid"
+
+  secondary_function:
+    description: "Setelah harga melewati True Open, level ini berubah fungsi"
+    bullish: "True Open menjadi SUPPORT saat harga retrace turun (Low of the Week reference)"
+    bearish: "True Open menjadi RESISTANCE saat harga retrace naik (High of the Week reference)"
+
+  validation_checklist:
+    - "Tentukan siklus yang digunakan (Daily/Weekly/dll)"
+    - "Tandai harga open Q2 siklus tersebut sebagai True Open"
+    - "SSMT Buy → minimal 1 pair membentuk SSMT DI BAWAH True Open"
+    - "SSMT Sell → minimal 1 pair membentuk SSMT DI ATAS True Open"
+    - "Tidak perlu semua pair di zona yang sama — cukup 1 pair yang memenuhi"
+
+# --- SL Logic ---
+stop_loss:
+  buy: "Di bawah latest Low dari swing point PSP yang terkonfirmasi"
+  sell: "Di atas latest High dari swing point PSP yang terkonfirmasi"
+  general: "Di luar swing High/Low terakhir yang terbentuk setelah SMT/PSP"
+  note: "Detail entry-level SL disesuaikan dengan setup MSS/CISD di LTF"
+
+# --- Risk Management --- (belum ada, diisi modul berikutnya)
+risk_management:
+  lot_method: "percent_balance"
+  lot_value: 1.0
+  max_open_positions: 1
+  max_daily_loss_percent: 3.0
+  max_drawdown_percent: 10.0
+
+# --- Time Cycles (AMDX / XAMD — Daye Quarterly Theory) ---
+# Teori fraktal: konsep Q1-Q4 berlaku di semua level waktu
+time_cycles:
+  theory: "Daye Quarterly Theory — fraktal, berlaku dari Yearly hingga Micro cycle"
+  patterns:
+    AMDX:
+      full: "Akumulasi → Manipulasi → Distribusi → Continue/Reversal"
+      trigger: "Q1 SIDEWAYS (ranging sempit) = fase A"
+      sequence:
+        Q1: "A — Akumulasi (sideways, jangan trade)"
+        Q2: "M — Manipulasi (fake-out / Judas Swing, siap entry berlawanan arah)"
+        Q3: "D — Distribusi (trending, entry searah atau ambil profit)"
+        Q4: "X — Continue atau Reversal"
+      entry_timing: "Q2 (tangkap manipulasi) atau Q3 (konfirmasi distribusi)"
+
+    XAMD:
+      full: "Continue/Reversal → Akumulasi → Manipulasi → Distribusi"
+      trigger: "Q1 TRENDING (expansion, range lebar) = fase X"
+      sequence:
+        Q1: "X — Trending (jangan trade, hanya observasi)"
+        Q2: "A — Akumulasi (sideways/choppy, SKIP jangan entry)"
+        Q3: "M — Manipulasi (fake-out, siap entry berlawanan arah)"
+        Q4: "D — Distribusi (trending)"
+      entry_timing: "Q3 (tangkap manipulasi)"
+
+  q1_identification:
+    sideways: "Range Q1 sempit, harga mondar-mandir dalam kotak kecil → AMDX"
+    trending: "Range Q1 lebar, satu arah dengan volume → XAMD"
+    validation: "Lihat di mana harga close relatif terhadap batas range Q4 sebelumnya"
+
+  rules:
+    - "JANGAN trade di Q1 — Q1 murni sebagai kompas penentu siklus"
+    - "AMDX: entry di Q2 atau Q3"
+    - "XAMD: SKIP Q2, entry di Q3"
+    - "Judas Swing di fase M = fake breakout → entry berlawanan arah"
+    - "TP di fase D (puncak Q3 atau awal Q4)"
+
+  validation_checklist:
+    - "Tunggu Q1 selesai terbentuk/close"
+    - "Identifikasi Q1: Sideways (AMDX) atau Trending (XAMD)?"
+    - "AMDX → bersiap entry di Q2 (tangkap fase M)"
+    - "XAMD → lewati Q2, bersiap entry di Q3 (tangkap fase M)"
+
+  invalidation: >
+    Setup gagal jika salah mengidentifikasi sifat Q1. Jika Q1 sebenarnya Trending (X)
+    tapi dianggap Sideways (A), maka entry di Q2 akan masuk ke fase Akumulasi (choppy).
+
+  tp_logic: "Fase D (Distribusi) — biasanya memuncak di Q3 atau awal Q4"
+
+  cycles:
+    yearly:
+      monitor_tf: "Weekly"
+      quarter_duration: "3 bulan"
+      Q1: "1 Jan – 31 Mar"
+      Q2: "1 Apr – 30 Jun"
+      Q3: "1 Jul – 30 Sep"
+      Q4: "1 Okt – 31 Des"
+      reset: "1 Januari tahun berikutnya"
+
+    monthly:
+      monitor_tf: "H4"
+      quarter_duration: "1 minggu"
+      Q1: "Minggu ke-1 (awal bulan)"
+      Q2: "Minggu ke-2"
+      Q3: "Minggu ke-3"
+      Q4: "Minggu ke-4 (akhir bulan)"
+      reset: "Tanggal 1 bulan baru"
+
+    weekly:
+      monitor_tf: "H1"
+      quarter_duration: "1 hari"
+      Q1: "Senin"
+      Q2: "Selasa"
+      Q3: "Rabu"
+      Q4: "Kamis"
+      reset: "Senin minggu berikutnya"
+      note: "Jumat TIDAK dihitung — anomali, skip"
+
+    daily:
+      monitor_tf: "M15"
+      quarter_duration: "1 sesi (6 jam)"
+      Q1: "Asia Session"
+      Q2: "London Session"
+      Q3: "NY AM Session"
+      Q4: "NY PM Session"
+      reset: "Sesi Asia dibuka hari berikutnya"
+
+    macro_90min:
+      monitor_tf: "M5"
+      quarter_duration: "90 menit"
+      derivation: "1 sesi (6 jam) ÷ 4"
+      Q1: "90 menit pertama dalam sesi"
+      Q2: "90 menit kedua"
+      Q3: "90 menit ketiga"
+      Q4: "90 menit terakhir"
+      reset: "Setiap pergantian sesi baru (Daily Cycle baru)"
+
+    micro:
+      monitor_tf: "M1"
+      quarter_duration: "22.5 menit"
+      derivation: "1 siklus 90-menit ÷ 4"
+      Q1: "22.5 menit pertama dalam siklus 90-menit"
+      Q2: "22.5 menit kedua"
+      Q3: "22.5 menit ketiga"
+      Q4: "22.5 menit terakhir"
+      reset: "Setiap siklus 90-menit baru dimulai"
+      use_case: "Scalping presisi tinggi"
+
+  timing_rule: >
+    Entry idealnya dicari di Q1 setiap siklus yang relevan dengan timeframe trading.
+    Q1 adalah fase accumulation/distribusi awal — momentum terbaik untuk entry.
+    LLM harus mengidentifikasi saat ini berada di Q berapa dalam siklus Daily dan Macro.
+
+# --- DFR (Defining Range) / Fibonacci Standard Deviation ---
+# Alat untuk memetakan target pergerakan 1 cycle berdasarkan range Q1
+dfr:
+  definition: >
+    Teknik memetakan target jarak pergerakan satu cycle menggunakan
+    Fibonacci Standard Deviation (StdDev) yang ditarik dari range Q1.
+  prerequisite: "Q1 cycle harus dalam kondisi RANGING/SIDEWAYS — bukan trending"
+
+  contexts:
+    htf_daily:
+      cycle: "Daily Cycle"
+      q1_reference: "Asia Session (Q1 Daily)"
+      use: "Melihat target pergerakan satu hari penuh"
+    ltf_ny:
+      cycle: "90-Minute Cycle"
+      q1_reference: "Q1 dari 90-min cycle sesi NY (M5)"
+      use: "Memetakan target pergerakan satu sesi NY"
+
+  procedure:
+    step_1: "Tentukan Q1 dari cycle yang dianalisis, beri kotak pada areanya"
+    step_2: "Bagi kotak Q1 menjadi 3 bagian waktu yang sama rata"
+    step_3: "BUANG bagian pertama (1/3 awal) — tidak dipakai"
+    step_4: "Ambil High dan Low dari 2/3 sisa (bagian ke-2 dan ke-3)"
+    step_5_bullish: "Bias naik → tarik Fibo StdDev dari HIGH ke LOW (ke bawah)"
+    step_5_bearish: "Bias turun → tarik Fibo StdDev dari LOW ke HIGH (ke atas)"
+
+  fibo_stddev_settings:
+    active_levels: [0, 0.5, 1, 1.5, -0.5, -1, -2, -2.5, -3, -4]
+    tool: "Fibonacci Standard Deviation (bukan Fibo Retracement biasa)"
+
+  level_interpretation:
+    retracement_zone:
+      levels: ["-2", "-2.5", "-3"]
+      role: "Area retracement / pullback — BUKAN reversal"
+      action: >
+        Jika harga retrace ke -2/-2.5, jangan panik — ini area untuk
+        cari setup entry continuation (2-stages). Bukan sinyal berbalik.
+    reversal_target:
+      level: "-4"
+      role: "Target maksimal — rawan reversal"
+      reason: "Level -4 sering sejajar dengan BSL/SSL atau Previous Daily H/L"
+      action: "Ambil profit di sini atau waspadai pembalikan arah"
+
+  tp_logic:
+    tp1: "Level -2 atau -2.5 (aman)"
+    tp2: "Level -4 (maksimal — sering sejajar dengan external liquidity)"
+
+  entry_at_retracement:
+    trigger: "Harga retrace ke level -2/-2.5 + konfirmasi SMT/NDOG/PSP M15"
+    poi: "FVG di M5 atau M15 yang konfluens dengan level -2 hingga -2.5"
+    sl: "Di bawah/atas swing terdekat dari konfirmasi trigger"
+    type: "Continuation entry — ikut arah tren utama"
+
+  validation_checklist:
+    - "Bias sesi sudah teridentifikasi"
+    - "Q1 terkonfirmasi sideways/ranging (bukan trending)"
+    - "1/3 pertama Q1 dibuang, High/Low diambil dari 2/3 sisanya"
+    - "Fibo StdDev ditarik dari arah yang benar sesuai bias"
+    - "Konfirmasi price action saat harga menyentuh level -2 s/d -2.5"
+
+  invalidation:
+    - "Q1 pergerakannya trending kencang atau wick terlalu panjang (bukan sideways)"
+    - "Range Q1 terlalu sempit sehingga level DFR tidak meaningful"
+
+# --- Adaptive Params --- (akan berkembang seiring modul)
+adaptive_params:
+  - name: "sl_multiplier"
+    default: 1.0
+    min: 0.8
+    max: 1.5
+    description: "Multiplier ukuran SL"
+  - name: "tp_multiplier"
+    default: 1.0
+    min: 0.8
+    max: 2.0
+    description: "Multiplier ukuran TP"
