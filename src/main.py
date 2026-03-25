@@ -105,7 +105,9 @@ def run_analysis_cycle(connector, engine, learner):
 
         # Jalankan analisis LLM
         result = engine.analyze(context, pair, timeframe)
-        logger.info("Keputusan: %s", result["decision"][:200])
+        decision = result["decision"]
+        logger.info("Keputusan:\n%s", decision)
+        logger.info("Tool calls: %d | Rounds: %d", len(result["tool_calls"]), len(result["tool_calls"]))
 
         # Cek apakah perlu learning cycle
         if learner.should_learn():

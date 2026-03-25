@@ -1,11 +1,42 @@
+# Environment & secrets
 .env
+*.env
+.env.*
+!.env.example
+
+# Data & logs
 data/
+*.log
+*.db
+*.sqlite3
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-.pytest_cache/
+*.pyd
+.Python
 *.egg-info/
 dist/
 build/
-.venv/
+.eggs/
 venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ChromaDB
+chroma/
+
+# Claude / flow
+.claude/
+.claude-flow/
+.mcp.json
+str
+,
+,+
