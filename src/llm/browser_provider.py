@@ -170,8 +170,8 @@ class BrowserProvider:
             await self._launch_headless(load_session=True)
 
             # Verify session is still valid
-            await self._page.goto(self._chat_url, wait_until="domcontentloaded")
-            await asyncio.sleep(2)
+            await self._page.goto(self._chat_url, wait_until="networkidle")
+            await asyncio.sleep(4)
 
             if await self.is_logged_in():
                 logger.info("[BrowserProvider] Session valid — running headless.")
@@ -298,8 +298,8 @@ class BrowserProvider:
         # Re-launch headless with the saved session
         logger.info("[BrowserProvider] Re-launching headless with saved session.")
         await self._launch_headless(load_session=True)
-        await self._page.goto(self._chat_url, wait_until="domcontentloaded")
-        await asyncio.sleep(2)
+        await self._page.goto(self._chat_url, wait_until="networkidle")
+        await asyncio.sleep(4)
 
     # ── Login check ──────────────────────────────────────────────────────────
 
@@ -435,14 +435,20 @@ class BrowserProvider:
             await page.goto(self._chat_url, wait_until="domcontentloaded")
             await asyncio.sleep(2)
 
+        # Wait for page to fully load first
+        await asyncio.sleep(3)
+
         # Find input
         textarea_selector = '#prompt-textarea, textarea[data-id="root"], textarea'
-        await page.wait_for_selector(textarea_selector, timeout=15000)
+        await page.wait_for_selector(textarea_selector, timeout=30000, state="attached")
 
         textarea = await page.query_selector(textarea_selector)
         if not textarea:
             raise RuntimeError("ChatGPT: input textarea not found")
 
+        # Scroll into view and wait for it to be interactable
+        await textarea.scroll_into_view_if_needed()
+        await asyncio.sleep(0.5)
         await textarea.click()
         await asyncio.sleep(0.4)
 
