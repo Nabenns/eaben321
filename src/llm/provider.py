@@ -133,8 +133,13 @@ class OpenAIProvider(LLMProvider):
 class GroqProvider(OpenAIProvider):
     """Groq — free tier, OpenAI-compatible API dengan tool calling."""
     def __init__(self, model: str = "llama-3.1-8b-instant"):
-        super().__init__(model=model, base_url="https://api.groq.com/openai/v1")
-        self.client.api_key = os.environ.get("GROQ_API_KEY")
+        from openai import OpenAI
+        self.client = OpenAI(
+            api_key=os.environ.get("GROQ_API_KEY", "dummy"),
+            base_url="https://api.groq.com/openai/v1",
+        )
+        self.model = model
+        self._last_assistant_msg = None
 
 
 def create_provider(provider: str = None, model: str = None) -> LLMProvider:
