@@ -52,9 +52,11 @@ class LLMEngine:
         correlation_section = self._build_correlation_section(pair) if pair else ""
         conversations = self.memory.get_recent_conversations(n=15)
         conv_section = f"\n## Instruksi & Percakapan Trader (Memory)\n{conversations}\n" if conversations else ""
+        recent_trades = self.memory.get_recent_trades_str(n=5)
+        trades_section = f"\n## Trade Terakhir (JSON Log)\n{recent_trades}\n" if recent_trades else ""
 
         return f"""Kamu adalah AI trader forex yang disiplin. Kamu HARUS mengikuti formula strategi di bawah secara ketat.{mode_note}
-{conv_section}
+{conv_section}{trades_section}
 {correlation_section}
 
 ## WORKFLOW WAJIB — ikuti urutan ini setiap siklus analisis:
