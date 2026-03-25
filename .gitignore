@@ -10,6 +10,9 @@ data/
 *.db
 *.sqlite3
 
+# Browser session files (contain auth tokens — never commit)
+data/sessions/*.json
+
 # Python
 __pycache__/
 *.py[cod]

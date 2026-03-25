@@ -1,4 +1,4 @@
-"""LLM Engine — otak sistem trading, provider-agnostic (OpenAI / Anthropic)."""
+"""LLM Engine — otak sistem trading, provider-agnostic (OpenAI / Anthropic / Browser)."""
 
 import logging
 from datetime import datetime
@@ -6,11 +6,23 @@ from datetime import datetime
 from src.llm.tools import TOOLS
 from src.llm.provider import LLMProvider, GroqProvider, create_provider
 from src.llm.tool_handler import ToolHandler
+from src.llm.text_tool_parser import (
+    build_tools_prompt_section,
+    has_tool_calls,
+    parse_tool_calls,
+    strip_tool_calls,
+    format_tool_result_for_prompt,
+)
 from src.memory.memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 10
+
+
+def _is_browser_provider(provider: LLMProvider) -> bool:
+    """Check if provider is a browser-based provider (no native tool calling)."""
+    return getattr(provider, "supports_tool_calling", True) is False
 
 
 class LLMEngine:
@@ -119,8 +131,26 @@ CLOSE: Ticket [ticket] | Alasan: [ringkas]
 ```
 """
 
+    def _build_browser_system_prompt(self, pair: str = "") -> str:
+        """
+        Build system prompt for browser providers — includes tool definitions as text
+        so the LLM knows how to call tools via TOOL_CALL: {...} pattern.
+        """
+        base_system = self._build_system_prompt(pair)
+        tools_section = build_tools_prompt_section(TOOLS)
+        return f"{base_system}\n\n{tools_section}"
+
     def analyze(self, initial_context: str, pair: str, timeframe: str) -> dict:
         """Jalankan satu siklus analisis lengkap. Return dict keputusan + reasoning."""
+        use_browser = _is_browser_provider(self.provider)
+
+        if use_browser:
+            return self._analyze_browser(initial_context, pair, timeframe)
+        else:
+            return self._analyze_api(initial_context, pair, timeframe)
+
+    def _analyze_api(self, initial_context: str, pair: str, timeframe: str) -> dict:
+        """Standard API-based analysis (Anthropic / OpenAI / Groq)."""
         system = self._build_system_prompt(pair)
         messages = [{"role": "user", "content": initial_context}]
 
@@ -171,6 +201,110 @@ CLOSE: Ticket [ticket] | Alasan: [ringkas]
             "reasoning": "\n".join(reasoning_log),
             "tool_calls": tool_calls_log,
             "decision": decision or "",
+        }
+
+        self.memory.save_episode(result)
+        return result
+
+    def _analyze_browser(self, initial_context: str, pair: str, timeframe: str) -> dict:
+        """
+        Browser-based analysis using text-pattern tool calling.
+
+        Flow:
+        1. Send system prompt + tool definitions + initial context to browser LLM
+        2. Parse TOOL_CALL patterns from response
+        3. Execute each tool, inject results back as next message
+        4. Repeat until LLM produces a final decision (no more TOOL_CALL patterns)
+        """
+        system = self._build_browser_system_prompt(pair)
+
+        # For browser provider, we track conversation differently.
+        # The BrowserLLMProvider.chat() handles sending the full system prompt on first turn.
+        messages = [{"role": "user", "content": initial_context}]
+
+        reasoning_log = []
+        tool_calls_log = []
+        decision = None
+        last_response_text = ""
+
+        # Start fresh conversation
+        if hasattr(self.provider, "start_new_conversation"):
+            try:
+                self.provider.start_new_conversation()
+            except Exception as e:
+                logger.warning("[BrowserEngine] Could not start new conversation: %s", e)
+
+        for round_num in range(MAX_TOOL_ROUNDS):
+            logger.info("[BrowserEngine] Round %d — sending to browser LLM...", round_num + 1)
+
+            response = self.provider.chat(
+                system=system,
+                messages=messages,
+                tools=TOOLS,
+            )
+            last_response_text = response.text
+
+            # Log the narrative part (strip tool calls)
+            narrative = strip_tool_calls(response.text)
+            if narrative:
+                reasoning_log.append(narrative)
+
+            if response.finished or not response.tool_calls:
+                # No tool calls — this is the final answer
+                decision = response.text
+                break
+
+            # Process text-based tool calls
+            tool_results = []
+            for tc in response.tool_calls:
+                tc_name = tc["name"]
+                tc_input = tc["input"]
+                tc_id = tc["id"]
+
+                tool_calls_log.append({"tool": tc_name, "input": tc_input})
+                logger.info(
+                    "[BrowserEngine Round %d] Tool: %s | Input: %s",
+                    round_num + 1, tc_name, tc_input
+                )
+
+                if self.dry_run and tc_name == "execute_trade":
+                    result_text = (
+                        f"[DRY RUN] Simulasi {tc_input.get('action')} "
+                        f"{tc_input.get('pair')} — tidak dieksekusi."
+                    )
+                else:
+                    try:
+                        result_text = self.tool_handler.handle(tc_name, tc_input)
+                    except Exception as e:
+                        result_text = f"Error calling {tc_name}: {e}"
+                        logger.error("[BrowserEngine] Tool error: %s", e)
+
+                tool_results.append({"id": tc_id, "content": str(result_text)})
+
+            # Build tool result message for browser provider
+            assistant_msg, tool_msg = self.provider.build_tool_result_message(
+                response.text, tool_results
+            )
+            messages.append(assistant_msg)
+            if isinstance(tool_msg, list):
+                messages.extend(tool_msg)
+            else:
+                messages.append(tool_msg)
+
+        else:
+            logger.warning(
+                "[BrowserEngine] Reached max tool rounds (%d)", MAX_TOOL_ROUNDS
+            )
+            decision = last_response_text or "MAX_ROUNDS_REACHED"
+
+        result = {
+            "timestamp": datetime.now().isoformat(),
+            "pair": pair,
+            "timeframe": timeframe,
+            "reasoning": "\n".join(reasoning_log),
+            "tool_calls": tool_calls_log,
+            "decision": decision or "",
+            "provider": "browser",
         }
 
         self.memory.save_episode(result)
