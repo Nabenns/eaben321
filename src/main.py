@@ -39,6 +39,7 @@ from src.llm.engine import LLMEngine
 from src.llm.tool_handler import ToolHandler
 from src.learning.adaptive import AdaptiveLearner
 from src.notification.telegram import TelegramNotifier
+from src.mt5.position_monitor import PositionMonitor
 
 
 def build_system():
@@ -88,10 +89,17 @@ def build_system():
     tg_chat = os.environ.get("TELEGRAM_CHAT_ID", "")
     notifier = TelegramNotifier(tg_token, tg_chat) if tg_token and tg_chat else None
 
-    return connector, engine, learner, notifier
+    # Position monitor
+    monitor = PositionMonitor(
+        memory=memory,
+        notifier=notifier,
+        magic=int(os.environ.get("MT5_MAGIC", 20260325)),
+    )
+
+    return connector, engine, learner, notifier, monitor
 
 
-def run_analysis_cycle(connector, engine, learner, notifier=None):
+def run_analysis_cycle(connector, engine, learner, notifier=None, monitor=None):
     """Satu siklus analisis: fetch data → LLM analyze → optional learning."""
     pair = os.environ.get("DEFAULT_PAIR", "EURUSD")
     timeframe = os.environ.get("DEFAULT_TF", "M15")
@@ -104,6 +112,13 @@ def run_analysis_cycle(connector, engine, learner, notifier=None):
             return
 
     try:
+        # Cek posisi yang baru ditutup sebelum analisis
+        if monitor:
+            closed = monitor.sync()
+            if closed:
+                logger.info("[Monitor] %d posisi baru ditutup: %s",
+                            len(closed), [(c["pair"], c["result"], c["pnl"]) for c in closed])
+
         # Fetch data awal
         df = connector.get_chart(pair, timeframe, n_candles)
         tick = connector.get_tick(pair)
@@ -144,7 +159,7 @@ def main():
         logger.warning("MODE: LIVE TRADING — order nyata aktif!")
     logger.info("=" * 60)
 
-    connector, engine, learner, notifier = build_system()
+    connector, engine, learner, notifier, monitor = build_system()
 
     # Connect ke MT5
     if not connector.connect():
@@ -159,7 +174,7 @@ def main():
         run_analysis_cycle,
         "interval",
         minutes=interval_minutes,
-        args=[connector, engine, learner, notifier],
+        args=[connector, engine, learner, notifier, monitor],
         id="analysis_cycle",
     )
 
@@ -169,7 +184,7 @@ def main():
         notifier.notify_startup(pair, mode)
 
     # Jalankan sekali langsung saat start
-    run_analysis_cycle(connector, engine, learner, notifier)
+    run_analysis_cycle(connector, engine, learner, notifier, monitor)
 
     try:
         scheduler.start()
