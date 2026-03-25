@@ -21,9 +21,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("./data/trading.log"),
+        logging.FileHandler("./data/trading.log", encoding="utf-8"),
     ],
 )
+# Fix Windows console encoding
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 logger = logging.getLogger("main")
 
 from src.mt5.connector import MT5Connector

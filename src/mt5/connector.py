@@ -163,7 +163,10 @@ class MT5Connector:
         # Ambil data H1 pair default untuk cek Asia range
         asia_bias = "unknown"
         try:
-            rates = mt5.copy_rates_from_pos("EURUSD", mt5.TIMEFRAME_H1, 0, 24)
+            import os
+            bias_pair = os.environ.get("DEFAULT_PAIR", "XAUUSDm")
+            mt5.symbol_select(bias_pair, True)
+            rates = mt5.copy_rates_from_pos(bias_pair, mt5.TIMEFRAME_H1, 0, 24)
             if rates is not None and len(rates) > 0:
                 # Cari candle dari 00:00 UTC sampai 09:00 UTC hari ini
                 today_date = now_utc.date()
