@@ -215,11 +215,12 @@ class BrowserLLMProvider(LLMProvider):
 
     Unlike API providers, this one:
     - Does NOT support native tool calling (handled by LLMEngine via text parsing)
-    - Uses browser_provider_name = "chatgpt" | "claude"
+    - Uses browser_provider_name = "chatgpt" | "claude" | "auto"
+      "auto" reads saved provider choice from disk, or prompts user on first run.
     - Manages its own async event loop internally for sync compatibility
     """
 
-    def __init__(self, browser_provider_name: str = "chatgpt"):
+    def __init__(self, browser_provider_name: str = "auto"):
         from src.llm.browser_provider import BrowserProvider
         self.browser_provider_name = browser_provider_name
         self._browser = BrowserProvider(provider=browser_provider_name)
@@ -340,10 +341,28 @@ class BrowserLLMProvider(LLMProvider):
 
 
 def create_provider(provider: str = None, model: str = None) -> LLMProvider:
-    """Factory — buat provider berdasarkan env var atau parameter."""
+    """
+    Factory — buat provider berdasarkan env var atau parameter.
+
+    Browser providers (no API key needed):
+      "auto"            → Read saved provider choice, or prompt on first run
+      "browser_chatgpt" → Force ChatGPT browser provider
+      "browser_claude"  → Force Claude browser provider
+
+    API providers:
+      "openai" / "api_openai"       → OpenAI API
+      "anthropic" / "api_anthropic" → Anthropic API
+      "groq"                        → Groq API (free)
+    """
     provider = provider or os.environ.get("LLM_PROVIDER", "anthropic").lower()
 
-    # Browser-based providers
+    # ── Browser-based providers (guided login, no API key) ──────────────────
+
+    if provider == "auto":
+        # "auto" = read saved provider choice from disk, or prompt if not set
+        logger.info("LLM Provider: Browser (auto — reads saved choice or prompts)")
+        return BrowserLLMProvider(browser_provider_name="auto")
+
     if provider == "browser_chatgpt":
         logger.info("LLM Provider: Browser (ChatGPT)")
         return BrowserLLMProvider(browser_provider_name="chatgpt")
@@ -351,6 +370,8 @@ def create_provider(provider: str = None, model: str = None) -> LLMProvider:
     if provider == "browser_claude":
         logger.info("LLM Provider: Browser (Claude)")
         return BrowserLLMProvider(browser_provider_name="claude")
+
+    # ── API providers ────────────────────────────────────────────────────────
 
     if provider == "openai" or provider == "api_openai":
         model = model or os.environ.get("LLM_MODEL", "gpt-4o")
