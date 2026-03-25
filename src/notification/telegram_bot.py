@@ -4,6 +4,7 @@ import json
 import logging
 import ssl
 import threading
+import urllib.parse
 import urllib.request
 from datetime import datetime
 
@@ -43,7 +44,6 @@ class TelegramChatBot:
             return {}
 
     def _post(self, method: str, payload: dict) -> dict:
-        import urllib.parse
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             f"{self._base}/{method}",
@@ -125,21 +125,29 @@ class TelegramChatBot:
             self._send(f"❌ Error analisis: {e}")
 
     def _handle_chat(self, user_text: str, username: str) -> None:
-        """Forward pesan bebas ke LLM sebagai chat."""
+        """Forward pesan bebas ke LLM sebagai chat, dengan conversation memory."""
         self._send("💭 Memproses...")
         try:
             import os
             pair = os.environ.get("DEFAULT_PAIR", "XAUUSDm")
-            # Buat context sederhana — hanya tanya ke LLM
+
+            # Ambil conversation history dari memory
+            recent = self.engine.memory.get_recent_conversations(n=10)
+            history_section = f"Percakapan sebelumnya:\n{recent}\n\n" if recent else ""
+
             context = (
-                f"Pesan dari trader ({username}):\n{user_text}\n\n"
-                f"Jawab sebagai AI trading assistant. Jika diminta analisis, gunakan tools yang tersedia."
+                f"{history_section}"
+                f"Pesan terbaru dari trader ({username}):\n{user_text}\n\n"
+                f"Jawab sebagai AI trading assistant. Ingat instruksi yang pernah diberikan trader sebelumnya."
             )
             result = self.engine.analyze(context, pair, "M15")
             reply = result["decision"] or result["reasoning"]
-            # Potong jika terlalu panjang
             if len(reply) > 3000:
                 reply = reply[:3000] + "\n...(terpotong)"
+
+            # Simpan exchange ke memory
+            self.engine.memory.store_conversation(username, user_text, reply)
+
             self._send(reply)
         except Exception as e:
             self._send(f"❌ Error: {e}")
@@ -181,7 +189,6 @@ class TelegramChatBot:
             threading.Thread(target=self._handle_chat, args=(text, username), daemon=True).start()
 
     def _poll(self) -> None:
-        import urllib.parse
         logger.info("[TelegramBot] Polling started")
         while self._running:
             result = self._get("getUpdates", {"offset": self._offset, "timeout": 30})

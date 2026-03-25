@@ -117,6 +117,25 @@ class MemoryManager:
 
     # ── Formula Params ────────────────────────────────────────────────────────
 
+    def store_conversation(self, username: str, user_msg: str, ai_reply: str) -> None:
+        """Simpan percakapan Telegram ke vector DB."""
+        self.vector.save_conversation(username, user_msg, ai_reply)
+
+    def get_recent_conversations(self, n: int = 15) -> str:
+        """Return percakapan terakhir sebagai string untuk di-inject ke context."""
+        items = self.vector.get_recent_conversations(n)
+        if not items:
+            return ""
+        lines = []
+        for item in reversed(items):  # oldest first
+            ts = item.get("timestamp", "")[:16].replace("T", " ")
+            user = item.get("username", "trader")
+            msg = item.get("user_msg", "")
+            reply = item.get("ai_reply", "")[:300]
+            lines.append(f"[{ts}] {user}: {msg}")
+            lines.append(f"[{ts}] AI: {reply}")
+        return "\n".join(lines)
+
     def save_formula_params(self, params: dict, reason: str) -> None:
         metrics = self.db.get_performance_summary()
         self.db.save_formula_params(params, reason, metrics)

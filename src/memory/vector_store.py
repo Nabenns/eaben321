@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_EPISODES = "trade_episodes"
 COLLECTION_FORMULA = "formula_params"
+COLLECTION_CONVERSATIONS = "conversations"
 
 
 class VectorStore:
@@ -26,6 +27,10 @@ class VectorStore:
         )
         self.formula_history = self.client.get_or_create_collection(
             name=COLLECTION_FORMULA,
+            metadata={"hnsw:space": "cosine"},
+        )
+        self.conversations = self.client.get_or_create_collection(
+            name=COLLECTION_CONVERSATIONS,
             metadata={"hnsw:space": "cosine"},
         )
         logger.info("VectorStore ready | episodes: %d", self.episodes.count())
@@ -93,6 +98,35 @@ class VectorStore:
                 "reason": reason,
             }],
         )
+
+    def save_conversation(self, username: str, user_msg: str, ai_reply: str) -> None:
+        """Simpan satu exchange percakapan Telegram ke memory."""
+        ts = datetime.now().isoformat()
+        doc_id = f"conv_{ts.replace(':', '').replace('-', '').replace('.', '')}"
+        doc_text = f"user={username} message={user_msg} reply={ai_reply[:500]}"
+        self.conversations.add(
+            ids=[doc_id],
+            documents=[doc_text],
+            metadatas=[{
+                "timestamp": ts,
+                "username": username,
+                "user_msg": user_msg[:500],
+                "ai_reply": ai_reply[:1000],
+            }],
+        )
+
+    def get_recent_conversations(self, n: int = 15) -> list[dict]:
+        """Ambil N percakapan terbaru, sorted by timestamp descending."""
+        count = self.conversations.count()
+        if count == 0:
+            return []
+        results = self.conversations.get(limit=min(n * 2, count))
+        items = sorted(
+            results["metadatas"],
+            key=lambda x: x.get("timestamp", ""),
+            reverse=True,
+        )
+        return items[:n]
 
     def get_latest_formula_params(self) -> Optional[dict]:
         """Ambil versi parameter formula terbaru."""
