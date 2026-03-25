@@ -162,22 +162,23 @@ entry_model:
       role: "Q1 Daily Cycle — HANYA untuk identifikasi AMDX atau XAMD"
       action: "Amati apakah Asia sideways (A) atau trending (X) — JANGAN trade"
 
+    ny_am_rule:
+      session: "New York AM Session (Q3 Daily Cycle)"
+      entry: "SELALU boleh entry — NY AM adalah Q3 daily, fase aktif trading"
+      amdx_context: "NY AM = fase D (Distribusi) — continuation dari Manipulasi London"
+      xamd_context: "NY AM = fase M (Manipulasi) — ini adalah entry utama saat XAMD"
+
     if_asia_A:
-      pattern: "AMDX — London = fase M (Manipulasi), NY AM = fase D (Distribusi/Continuation)"
-      entry_session_primary: "London Session"
-      entry_session_secondary: "New York AM Session"
-      entry_timing: "Q3 & Q4 dari 90m cycle di London ATAU NY AM"
-      logic: >
-        Asia sideways → London bikin fake move (Manipulasi) → entry berlawanan arah di London.
-        NY AM = fase Distribusi (D), masih valid untuk entry continuation atau reversal lanjutan.
-        Kedua sesi boleh dianalisis dan dientry saat Asia=A.
+      pattern: "AMDX — London = fase M (Manipulasi)"
+      london_entry: "BOLEH — London adalah fase M, cari setup di Q3/Q4 90m cycle London"
+      ny_am_entry: "BOLEH — NY AM adalah fase D, entry continuation"
+      logic: "Asia sideways → London manipulasi → entry di London (M) dan/atau NY AM (D)"
 
     if_asia_X:
       pattern: "XAMD — London = fase A (Akumulasi/Sideways)"
-      skip: "SKIP London Session — choppy, tidak ada setup bagus"
-      entry_session: "New York AM Session"
-      entry_timing: "Q3 & Q4 dari 90m cycle di NY AM"
-      logic: "Asia trending → London sideways (skip) → NY AM bikin Manipulasi → entry"
+      london_entry: "SKIP — London choppy, tidak ada setup bagus saat XAMD"
+      ny_am_entry: "BOLEH — NY AM adalah fase M (Manipulasi utama saat XAMD), high probability"
+      logic: "Asia trending → London sideways (skip) → NY AM = Manipulasi → entry di NY AM"
 
   macro_cycle_timing:
     focus_quarters: ["Q3", "Q4"]
