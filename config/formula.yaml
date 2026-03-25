@@ -163,10 +163,14 @@ entry_model:
       action: "Amati apakah Asia sideways (A) atau trending (X) — JANGAN trade"
 
     if_asia_A:
-      pattern: "AMDX — London = fase M (Manipulasi)"
-      entry_session: "London Session"
-      entry_timing: "Q3 & Q4 dari 90m cycle di London"
-      logic: "Asia sideways → London bikin fake move (Manipulasi) → entry berlawanan arah"
+      pattern: "AMDX — London = fase M (Manipulasi), NY AM = fase D (Distribusi/Continuation)"
+      entry_session_primary: "London Session"
+      entry_session_secondary: "New York AM Session"
+      entry_timing: "Q3 & Q4 dari 90m cycle di London ATAU NY AM"
+      logic: >
+        Asia sideways → London bikin fake move (Manipulasi) → entry berlawanan arah di London.
+        NY AM = fase Distribusi (D), masih valid untuk entry continuation atau reversal lanjutan.
+        Kedua sesi boleh dianalisis dan dientry saat Asia=A.
 
     if_asia_X:
       pattern: "XAMD — London = fase A (Akumulasi/Sideways)"
