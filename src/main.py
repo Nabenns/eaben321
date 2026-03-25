@@ -34,6 +34,7 @@ from src.llm.provider import create_provider
 from src.llm.engine import LLMEngine
 from src.llm.tool_handler import ToolHandler
 from src.learning.adaptive import AdaptiveLearner
+from src.notification.telegram import TelegramNotifier
 
 
 def build_system():
@@ -78,10 +79,15 @@ def build_system():
         trigger_every_n_trades=int(os.environ.get("LEARN_EVERY_N", 10)),
     )
 
-    return connector, engine, learner
+    # Telegram notifier (opsional)
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    tg_chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+    notifier = TelegramNotifier(tg_token, tg_chat) if tg_token and tg_chat else None
+
+    return connector, engine, learner, notifier
 
 
-def run_analysis_cycle(connector, engine, learner):
+def run_analysis_cycle(connector, engine, learner, notifier=None):
     """Satu siklus analisis: fetch data → LLM analyze → optional learning."""
     pair = os.environ.get("DEFAULT_PAIR", "EURUSD")
     timeframe = os.environ.get("DEFAULT_TF", "M15")
@@ -107,7 +113,10 @@ def run_analysis_cycle(connector, engine, learner):
         result = engine.analyze(context, pair, timeframe)
         decision = result["decision"]
         logger.info("Keputusan:\n%s", decision)
-        logger.info("Tool calls: %d | Rounds: %d", len(result["tool_calls"]), len(result["tool_calls"]))
+        logger.info("Tool calls: %s", [tc["tool"] for tc in result["tool_calls"]])
+
+        if notifier:
+            notifier.notify_decision(pair, timeframe, decision, result["tool_calls"])
 
         # Cek apakah perlu learning cycle
         if learner.should_learn():
@@ -117,6 +126,8 @@ def run_analysis_cycle(connector, engine, learner):
 
     except Exception as e:
         logger.exception("Error dalam siklus analisis: %s", e)
+        if notifier:
+            notifier.notify_error(str(e))
 
 
 def main():
@@ -129,7 +140,7 @@ def main():
         logger.warning("MODE: LIVE TRADING — order nyata aktif!")
     logger.info("=" * 60)
 
-    connector, engine, learner = build_system()
+    connector, engine, learner, notifier = build_system()
 
     # Connect ke MT5
     if not connector.connect():
@@ -144,12 +155,17 @@ def main():
         run_analysis_cycle,
         "interval",
         minutes=interval_minutes,
-        args=[connector, engine, learner],
+        args=[connector, engine, learner, notifier],
         id="analysis_cycle",
     )
 
+    if notifier:
+        pair = os.environ.get("DEFAULT_PAIR", "EURUSD")
+        mode = "DRY RUN" if dry_run else "LIVE"
+        notifier.notify_startup(pair, mode)
+
     # Jalankan sekali langsung saat start
-    run_analysis_cycle(connector, engine, learner)
+    run_analysis_cycle(connector, engine, learner, notifier)
 
     try:
         scheduler.start()
