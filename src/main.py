@@ -91,7 +91,7 @@ def run_analysis_cycle(connector, engine, learner, notifier=None):
     """Satu siklus analisis: fetch data → LLM analyze → optional learning."""
     pair = os.environ.get("DEFAULT_PAIR", "EURUSD")
     timeframe = os.environ.get("DEFAULT_TF", "M15")
-    n_candles = int(os.environ.get("DEFAULT_CANDLES", 100))
+    n_candles = int(os.environ.get("DEFAULT_CANDLES", 50))
 
     if not connector.is_connected():
         logger.warning("MT5 tidak terkoneksi, mencoba reconnect...")

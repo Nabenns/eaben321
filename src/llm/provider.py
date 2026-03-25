@@ -143,7 +143,7 @@ class OpenAIProvider(LLMProvider):
 
 class GroqProvider(LLMProvider):
     """Groq — gratis, cepat, OpenAI-compatible API dengan tool calling."""
-    def __init__(self, model: str = "llama-3.3-70b-versatile"):
+    def __init__(self, model: str = "llama-3.1-8b-instant"):
         from openai import OpenAI
         self.client = OpenAI(
             api_key=os.environ.get("GROQ_API_KEY"),
@@ -219,7 +219,7 @@ def create_provider(provider: str = None, model: str = None) -> LLMProvider:
         return OpenAIProvider(model=model)
 
     if provider == "groq":
-        model = model or os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile")
+        model = model or os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
         logger.info("LLM Provider: Groq (FREE) | Model: %s", model)
         return GroqProvider(model=model)
 

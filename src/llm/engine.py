@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from src.llm.tools import TOOLS
-from src.llm.provider import LLMProvider, create_provider
+from src.llm.provider import LLMProvider, GroqProvider, create_provider
 from src.llm.tool_handler import ToolHandler
 from src.memory.memory_manager import MemoryManager
 
@@ -46,7 +46,8 @@ class LLMEngine:
         return "\n".join(lines)
 
     def _build_system_prompt(self, pair: str = "") -> str:
-        formula = self.memory.get_formula()
+        compact = isinstance(self.provider, GroqProvider)
+        formula = self.memory.get_formula(compact=compact)
         params = self.memory.get_current_formula_params()
         metrics = self.memory.get_performance_metrics()
         mode_note = "\n⚠️ DRY RUN MODE: Jangan panggil execute_trade." if self.dry_run else ""

@@ -26,11 +26,36 @@ class MemoryManager:
 
     # ── Formula ───────────────────────────────────────────────────────────────
 
-    def get_formula(self) -> str:
-        """Load formula dari YAML dan return sebagai string terformat."""
+    def get_formula(self, compact: bool = False) -> str:
+        """Load formula dari YAML dan return sebagai string terformat.
+        compact=True: strip komentar dan field verbose untuk hemat token (pakai di Groq).
+        """
         if not self._formula_cache:
             with open(self.formula_path, "r", encoding="utf-8") as f:
                 self._formula_cache = yaml.safe_load(f)
+
+        if compact:
+            # Strip field deskriptif panjang, pertahankan rules & checklist
+            _SKIP_KEYS = {
+                "description", "analogy", "indicator", "warning", "note",
+                "use_case", "when_to_use", "how_to_draw", "impulse_reference",
+                "confluent_signal", "after_cisd_confirmed", "after_confirmed",
+                "example", "example_valid", "example_invalid", "examples",
+                "how_to_mark", "identification", "fibonacci_settings",
+                "continuation_setup", "invalidation", "after_cisd_confirmed",
+                "entry_execution", "fresh_criteria", "quality_criteria",
+                "invalid_fvg", "fvg_context", "equilibrium_context",
+                "macro_cycle_timing", "continuation_setup",
+            }
+            def _strip(obj):
+                if isinstance(obj, dict):
+                    return {k: _strip(v) for k, v in obj.items() if k not in _SKIP_KEYS}
+                if isinstance(obj, list):
+                    return [_strip(i) for i in obj]
+                return obj
+            data = _strip(self._formula_cache)
+            return yaml.dump(data, allow_unicode=True, default_flow_style=False)
+
         return yaml.dump(self._formula_cache, allow_unicode=True, default_flow_style=False)
 
     def get_current_formula_params(self) -> str:
