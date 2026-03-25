@@ -142,7 +142,19 @@ class GroqProvider(OpenAIProvider):
         self._last_assistant_msg = None
 
 
-def create_provider(provider: str = None, model: str = None) -> LLMProvider:
+class AlibabaProvider(OpenAIProvider):
+    """Alibaba DashScope (Qwen) — konteks besar, tool calling, OpenAI-compatible."""
+    def __init__(self, model: str = "qwen-plus"):
+        from openai import OpenAI
+        self.client = OpenAI(
+            api_key=os.environ.get("ALIBABA_API_KEY", "dummy"),
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        self.model = model
+        self._last_assistant_msg = None
+
+
+def create_provider(provider: str = None, model: str = None) -> LLMProvider:  # noqa: C901
     """Factory — buat provider berdasarkan env var LLM_PROVIDER.
     Pilihan: openai | anthropic | groq
     """
@@ -157,6 +169,11 @@ def create_provider(provider: str = None, model: str = None) -> LLMProvider:
         model = model or os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
         logger.info("LLM Provider: Groq | Model: %s", model)
         return GroqProvider(model=model)
+
+    if provider in ("alibaba", "qwen", "dashscope"):
+        model = model or os.environ.get("LLM_MODEL", "qwen-plus")
+        logger.info("LLM Provider: Alibaba (Qwen) | Model: %s", model)
+        return AlibabaProvider(model=model)
 
     # Default: OpenAI
     model = model or os.environ.get("LLM_MODEL", "gpt-4o")

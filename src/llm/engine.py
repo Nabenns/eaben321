@@ -45,8 +45,7 @@ class LLMEngine:
         return "\n".join(lines)
 
     def _build_system_prompt(self, pair: str = "") -> str:
-        compact = isinstance(self.provider, GroqProvider)
-        formula = self.memory.get_formula(compact=compact)
+        formula = self.memory.get_formula(compact=False)
         params = self.memory.get_current_formula_params()
         metrics = self.memory.get_performance_metrics()
         mode_note = "\n⚠️ DRY RUN MODE: Jangan panggil execute_trade." if self.dry_run else ""
