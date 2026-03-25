@@ -228,28 +228,35 @@ class BrowserLLMProvider(LLMProvider):
         self._initialized = False
         self.supports_tool_calling = False   # Flag for LLMEngine to detect
 
-    def _get_loop(self):
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return loop
-        except RuntimeError:
-            pass
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-        return self._loop
-
     def _run(self, coro):
-        """Run an async coroutine from sync context."""
+        """Run an async coroutine from sync context — Windows Python 3.14 compatible."""
         import asyncio
-        loop = self._get_loop()
-        if loop.is_running():
-            # If already in async context, schedule it
-            import concurrent.futures
-            future = asyncio.run_coroutine_threadsafe(coro, loop)
-            return future.result(timeout=150)
-        return loop.run_until_complete(coro)
+        import threading
+
+        result_container = [None]
+        error_container = [None]
+        done_event = threading.Event()
+
+        def thread_target():
+            # Each call gets its own fresh event loop in a dedicated thread
+            # This avoids Windows ProactorEventLoop re-entrancy issues
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result_container[0] = loop.run_until_complete(coro)
+            except Exception as e:
+                error_container[0] = e
+            finally:
+                loop.close()
+                done_event.set()
+
+        t = threading.Thread(target=thread_target, daemon=True)
+        t.start()
+        done_event.wait(timeout=180)
+
+        if error_container[0] is not None:
+            raise error_container[0]
+        return result_container[0]
 
     def _ensure_initialized(self):
         if not self._initialized:
