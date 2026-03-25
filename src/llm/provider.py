@@ -146,9 +146,13 @@ class AlibabaProvider(OpenAIProvider):
     """Alibaba DashScope (Qwen) — konteks besar, tool calling, OpenAI-compatible."""
     def __init__(self, model: str = "qwen-plus"):
         from openai import OpenAI
+        base_url = os.environ.get(
+            "ALIBABA_BASE_URL",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
         self.client = OpenAI(
             api_key=os.environ.get("ALIBABA_API_KEY", "dummy"),
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            base_url=base_url,
         )
         self.model = model
         self._last_assistant_msg = None
