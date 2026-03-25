@@ -88,7 +88,9 @@ TOOLS = [
         "name": "execute_trade",
         "description": (
             "Eksekusi order BUY atau SELL di MT5. "
-            "HANYA panggil setelah analisis selesai dan keputusan sudah final."
+            "WAJIB dipanggil sebagai tool call jika keputusan adalah EKSEKUSI — "
+            "menulis teks 'EKSEKUSI:' saja TIDAK cukup, order tidak akan masuk MT5. "
+            "Panggil tool ini dengan pair, action, lot, sl, dan tp yang sudah ditentukan."
         ),
         "input_schema": {
             "type": "object",

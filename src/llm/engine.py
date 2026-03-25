@@ -98,6 +98,8 @@ Jika semua step di atas terpenuhi:
 - TP1: Internal liquidity terdekat yang fresh | TP2: External liquidity (BSL/SSL)
 - Lot: sesuai risk management (default max 2% equity per trade)
 - Panggil `query_memory` untuk cek situasi serupa di masa lalu
+- **WAJIB: Panggil tool `execute_trade` dengan parameter lengkap (pair, action, lot, sl, tp)**
+- Jangan hanya tulis "EKSEKUSI:" sebagai teks — tanpa memanggil tool `execute_trade`, order TIDAK akan terkirim ke MT5
 - Jika DRY RUN: tulis keputusan tanpa call execute_trade
 
 ## Formula Lengkap (referensi detail)
