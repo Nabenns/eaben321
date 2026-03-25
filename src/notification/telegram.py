@@ -2,8 +2,8 @@
 
 import logging
 import urllib.request
-import urllib.parse
 import json
+import ssl
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,11 @@ class TelegramNotifier:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                 return resp.status == 200
         except Exception as e:
             logger.warning("Telegram send failed: %s", e)
