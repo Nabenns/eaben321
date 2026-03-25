@@ -5,22 +5,41 @@
 # Mapping korelasi antar pair untuk SMT / SSMT / Mirror PD / SMT Fill
 # Key = pair utama, value = list pair korelasi (urutan prioritas)
 correlation_map:
+  # --- Positive correlation (gold group) — bandingkan Low vs Low, High vs High ---
   XAUUSDm:
+    - XAUEURm        # Gold/EUR — korelasi positif (gold group)
+    - XAUGBPm        # Gold/GBP — korelasi positif (gold group)
     - XAGUSDm        # Silver — korelasi positif (metal group)
-    - EURUSDm        # DXY proxy — korelasi negatif terhadap USD
+  XAUEURm:
+    - XAUUSDm
+    - XAUGBPm
+    - XAGUSDm
+  XAUGBPm:
+    - XAUUSDm
+    - XAUEURm
+    - XAGUSDm
   XAGUSDm:
     - XAUUSDm
-    - EURUSDm
+    - XAUEURm
+    - XAUGBPm
+  # --- Positive correlation (equity group) ---
+  NASDAQm:
+    - US30m          # Dow Jones
+    - US500m         # S&P 500
+  US30m:
+    - NASDAQm
+    - US500m
+  # --- Positive correlation (forex majors) ---
   EURUSDm:
-    - GBPUSDm        # Sterling — korelasi positif
-    - XAUUSDm        # Gold — korelasi negatif terhadap USD
+    - GBPUSDm        # korelasi positif (vs USD)
+    - AUDUSDm
   GBPUSDm:
     - EURUSDm
+    - AUDUSDm
+  # --- Negative correlation ---
+  # EURUSD vs DXY: bandingkan Low EURUSD vs High DXY (berlawanan)
   USDJPYm:
-    - USDCHFm        # Franc — korelasi positif (safe haven)
-  NASDAQm:
-    - US30m          # Dow Jones — korelasi positif (equity)
-    - XAUUSDm        # Gold — korelasi negatif (risk-on vs safe haven)
+    - USDCHFm        # safe haven group — korelasi positif
 
 # Session windows (UTC)
 sessions:
