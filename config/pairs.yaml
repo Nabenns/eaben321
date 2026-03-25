@@ -1,0 +1,87 @@
+# ============================================================
+# Pairs Configuration — Korelasi, Session, & Risk Settings
+# ============================================================
+
+# Mapping korelasi antar pair untuk SMT / SSMT / Mirror PD / SMT Fill
+# Key = pair utama, value = list pair korelasi (urutan prioritas)
+correlation_map:
+  XAUUSDm:
+    - XAGUSDm        # Silver — korelasi positif (metal group)
+    - EURUSDm        # DXY proxy — korelasi negatif terhadap USD
+  XAGUSDm:
+    - XAUUSDm
+    - EURUSDm
+  EURUSDm:
+    - GBPUSDm        # Sterling — korelasi positif
+    - XAUUSDm        # Gold — korelasi negatif terhadap USD
+  GBPUSDm:
+    - EURUSDm
+  USDJPYm:
+    - USDCHFm        # Franc — korelasi positif (safe haven)
+  NASDAQm:
+    - US30m          # Dow Jones — korelasi positif (equity)
+    - XAUUSDm        # Gold — korelasi negatif (risk-on vs safe haven)
+
+# Session windows (UTC)
+sessions:
+  asia:
+    start: "00:00"
+    end: "07:00"
+    role: "observe"          # Tentukan bias AMDX/XAMD
+  london:
+    start: "07:00"
+    end: "12:00"
+    role: "trade"            # Entry jika Asia=A (AMDX)
+  ny_am:
+    start: "12:00"
+    end: "17:00"
+    role: "trade"            # Entry selalu, atau jika Asia=X (XAMD) skip London → NY AM
+  ny_pm:
+    start: "17:00"
+    end: "21:00"
+    role: "avoid"            # Hindari entry baru
+
+# 90-menit cycle quarters (hitung dari 00:00 UTC, rolling)
+macro_90min:
+  q1: { offset: 0,    label: "Q1 — Accumulation / Observe" }
+  q2: { offset: 22.5, label: "Q2 — True Open forms here" }
+  q3: { offset: 45,   label: "Q3 — Entry zone" }
+  q4: { offset: 67.5, label: "Q4 — Entry zone / continuation" }
+  entry_quarters: [3, 4]     # Hanya Q3 & Q4
+
+# Pair-specific settings
+pair_settings:
+  XAUUSDm:
+    pip_size: 0.01
+    min_fvg_pts: 50          # Minimum gap FVG yang valid (dalam points)
+    sl_buffer_pts: 20        # Buffer SL dari swing wick
+    default_lot: 0.01
+    max_spread_pts: 80       # Tolak trade jika spread > ini
+
+  XAGUSDm:
+    pip_size: 0.001
+    min_fvg_pts: 100
+    sl_buffer_pts: 50
+    default_lot: 0.1
+    max_spread_pts: 200
+
+  EURUSDm:
+    pip_size: 0.00001
+    min_fvg_pts: 5
+    sl_buffer_pts: 3
+    default_lot: 0.01
+    max_spread_pts: 20
+
+  GBPUSDm:
+    pip_size: 0.00001
+    min_fvg_pts: 8
+    sl_buffer_pts: 5
+    default_lot: 0.01
+    max_spread_pts: 30
+
+# Risk management global
+risk:
+  max_risk_per_trade_pct: 2.0    # Max 2% equity per trade
+  max_open_trades: 3              # Max posisi terbuka bersamaan
+  max_daily_drawdown_pct: 5.0     # Stop trading jika daily DD > 5%
+  min_rr_ratio: 2.0               # Minimum RR sebelum entry

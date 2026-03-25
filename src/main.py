@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import yaml
 from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -53,6 +54,11 @@ def build_system():
         vector_dir=os.environ.get("VECTOR_DIR", "./data/chromadb"),
     )
 
+    # Load pairs config
+    pairs_config_path = os.environ.get("PAIRS_CONFIG", "./config/pairs.yaml")
+    with open(pairs_config_path, "r") as f:
+        pairs_config = yaml.safe_load(f)
+
     # LLM
     provider = create_provider()
     tool_handler = ToolHandler(connector, executor, memory)
@@ -62,6 +68,7 @@ def build_system():
         memory=memory,
         provider=provider,
         dry_run=dry_run,
+        pairs_config=pairs_config,
     )
 
     # Adaptive learner

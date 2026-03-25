@@ -20,19 +20,42 @@ class LLMEngine:
         memory: MemoryManager,
         provider: LLMProvider = None,
         dry_run: bool = False,
+        pairs_config: dict = None,
     ):
         self.provider = provider or create_provider()
         self.tool_handler = tool_handler
         self.memory = memory
         self.dry_run = dry_run
+        self.pairs_config = pairs_config or {}
 
-    def _build_system_prompt(self) -> str:
+    def _build_correlation_section(self, pair: str) -> str:
+        corr_map = self.pairs_config.get("correlation_map", {})
+        corr_pairs = corr_map.get(pair, [])
+        pair_settings = self.pairs_config.get("pair_settings", {})
+        risk = self.pairs_config.get("risk", {})
+
+        ps = pair_settings.get(pair, {})
+        lines = [
+            f"## Pair Aktif: {pair}",
+            f"- Korelasi untuk SMT/SSMT/Fill/Mirror: {', '.join(corr_pairs) if corr_pairs else 'tidak dikonfigurasi'}",
+            f"- Min FVG: {ps.get('min_fvg_pts', 'N/A')} pts | SL buffer: {ps.get('sl_buffer_pts', 'N/A')} pts",
+            f"- Max spread: {ps.get('max_spread_pts', 'N/A')} pts | Default lot: {ps.get('default_lot', 'N/A')}",
+            f"- Risk per trade: max {risk.get('max_risk_per_trade_pct', 2)}% equity | Min R:R = {risk.get('min_rr_ratio', 2)}",
+            f"- Max open trades: {risk.get('max_open_trades', 3)} | Max daily DD: {risk.get('max_daily_drawdown_pct', 5)}%",
+        ]
+        return "\n".join(lines)
+
+    def _build_system_prompt(self, pair: str = "") -> str:
         formula = self.memory.get_formula()
         params = self.memory.get_current_formula_params()
         metrics = self.memory.get_performance_metrics()
         mode_note = "\n⚠️ DRY RUN MODE: Jangan panggil execute_trade." if self.dry_run else ""
+        correlation_section = self._build_correlation_section(pair) if pair else ""
 
         return f"""Kamu adalah AI trader forex yang disiplin. Kamu HARUS mengikuti formula strategi di bawah secara ketat.{mode_note}
+
+{correlation_section}
+
 
 ## WORKFLOW WAJIB — ikuti urutan ini setiap siklus analisis:
 
@@ -97,7 +120,7 @@ CLOSE: Ticket [ticket] | Alasan: [ringkas]
 
     def analyze(self, initial_context: str, pair: str, timeframe: str) -> dict:
         """Jalankan satu siklus analisis lengkap. Return dict keputusan + reasoning."""
-        system = self._build_system_prompt()
+        system = self._build_system_prompt(pair)
         messages = [{"role": "user", "content": initial_context}]
 
         reasoning_log = []
