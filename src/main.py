@@ -39,6 +39,7 @@ from src.llm.engine import LLMEngine
 from src.llm.tool_handler import ToolHandler
 from src.learning.adaptive import AdaptiveLearner
 from src.notification.telegram import TelegramNotifier
+from src.notification.telegram_bot import TelegramChatBot
 from src.mt5.position_monitor import PositionMonitor
 
 
@@ -182,6 +183,13 @@ def main():
         pair = os.environ.get("DEFAULT_PAIR", "EURUSD")
         mode = "DRY RUN" if dry_run else "LIVE"
         notifier.notify_startup(pair, mode)
+
+    # Start Telegram chatbot
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    tg_chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if tg_token and tg_chat:
+        bot = TelegramChatBot(tg_token, tg_chat, engine, connector, notifier)
+        bot.start()
 
     # Jalankan sekali langsung saat start
     run_analysis_cycle(connector, engine, learner, notifier, monitor)
